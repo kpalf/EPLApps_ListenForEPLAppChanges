@@ -1,0 +1,78 @@
+/**
+ * Title:        ListenForEPLAppChanges.mon
+ * Description:  EPL utility to listen for Cumulocity ManagedObjects that represent individual "EPL App" entities for the apama-ctrl microservice of Apama Streaming Analytics within Cumulocity IoT.
+ * Source:       https://github.com/kpalf/EPLApps_ListenForEPLAppChanges 
+ * 
+ * WARNING: The structure of a ManagedObjects representing an "EPL App" is not public or documented and may be subject to change.
+ *
+ *
+ * Copyright (c) 2022 Kevin Palfreyman
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this
+ * file except in compliance with the License. You may obtain a copy of the License at
+ * http:/www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software distributed under the
+ * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.
+ * See the License for the specific language governing permissions and limitations under the License.
+ */
+
+using com.apama.cumulocity.ManagedObject;
+using com.apama.cumulocity.Util;
+
+/** 
+ * A simple event to represent and EPL file from the inventory, with just enough basic info to demonstrate changes. 
+ * Note that the structure of a ManagedObjects representing an "EPL App" is not public or documented and may be subject to change.
+*/
+event EPLFile {
+	constant string MOTYPE_EPLFILE := "apama_eplfile";
+
+	string name; 				// from the MO.name
+	string eplfile_contents; 	// from the MO.params["apama_eplfile"]["contents"] - the escaped EPL
+	string eplfile_description; // from the MO.params["apama_eplfile"]["description"] - empty string or description
+	string eplfile_state; 		// from the MO.params["apama_eplfile"]["state"] - always either "active", or "inactive"
+	float lastUpdated; 			// from the MO.params[lastUpdated]
+
+
+	/** Static factory action to create an instance of an EPLFile event from a ManagedObject of the correct type. */
+	static action fromMO(ManagedObject mo) returns EPLFile {
+		EPLFile file := new EPLFile;
+
+		if (MOTYPE_EPLFILE != mo.type) {
+			log "ManagedObject is not of type \""+MOTYPE_EPLFILE+"\"" at WARN;
+		}
+		else {
+			file.name:=mo.name;
+			file.lastUpdated:=<float> mo.params.getOrDefault("lastUpdated");
+			dictionary<any,any> apama_eplfile := <dictionary<any,any>>mo.params.getOrDefault("apama_eplfile");
+			file.eplfile_contents:=<string>apama_eplfile.getOrDefault("contents");
+			file.eplfile_description:=<string>apama_eplfile.getOrDefault("description");
+			file.eplfile_state:=<string>apama_eplfile.getOrDefault("state");
+		}
+
+		return file;
+	} // action fromMO()
+
+	/** A quick string representation of just the metadata without the actual EPL content. */
+	action metadataToString() returns string {
+		return "\""+name+"\", \""+eplfile_description+"\", \""+eplfile_state+"\", \""+Util.formatTime(lastUpdated)+"\"";
+	} // action metadataToString()
+
+} // event EPLFile
+
+
+/** Simple monitor that will listen for all ManagedObject events of the type related to apama EPL files, parse those, and log some metadata. */
+monitor ListenForEPLAppChanges {
+
+	action onload() {
+		monitor.subscribe(ManagedObject.SUBSCRIBE_CHANNEL);
+		on all ManagedObject(type=EPLFile.MOTYPE_EPLFILE) as mo {
+			EPLFile eplfile := EPLFile.fromMO(mo);
+			log "*** ListenForEPLAppChanges - MO received indicating an EPLApp file was changed with the following metadata: "+eplfile.metadataToString() at INFO;
+
+			// do something else with the information....
+		}
+	} // onload()
+
+} // monitor ListenForEPLAppChanges
+
